@@ -134,8 +134,8 @@ export function compute(input) {
   const FACES = {
     F: { name: '前面', pts: xs, at: (t, y) => [t, y, 0], top: () => H1 },
     B: { name: '後面', pts: xs, at: (t, y) => [t, y, D], top: () => H2 },
-    L: { name: '左面', pts: zs, at: (t, y) => [0, y, t], top: (t) => hAt(t) },
-    R: { name: '右面', pts: zs, at: (t, y) => [W, y, t], top: (t) => hAt(t) },
+    L: { name: '右面', pts: zs, at: (t, y) => [0, y, t], top: (t) => hAt(t) },
+    R: { name: '左面', pts: zs, at: (t, y) => [W, y, t], top: (t) => hAt(t) },
   };
 
   // 胴つなぎ（面ごとに高さを変えられる。0 で入れない）
