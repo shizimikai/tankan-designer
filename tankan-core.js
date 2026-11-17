@@ -68,7 +68,7 @@ export function compute(input) {
   const hAt = (z) => (mono ? H1 + ((H2 - H1) * z) / D : H1);
 
   if (!mono && Hr <= H1 + 0.05) {
-    warnings.push({ level: 'error', text: '棟の高さが軒の高さ以下です。棟を軒より高くしてください。' });
+    warnings.push({ level: 'error', text: '棟（屋根のいちばん高いところ）の高さが、軒（屋根のいちばん低いところ）と同じか、それより低くなっています。これでは三角の屋根になりません。「棟の高さ」を「軒の高さ」より大きい数字にしてください。' });
   }
 
   // 柱（外周のみ）
@@ -144,7 +144,7 @@ export function compute(input) {
     if (!(h > 0)) continue;
     const minTop = Math.min(...f.pts.map((t) => f.top(t)));
     if (h >= minTop - 0.15) {
-      warnings.push({ level: 'warn', text: `${f.name}の胴つなぎ（${h}m）が桁の高さに近すぎるか超えているため、入れていません。` });
+      warnings.push({ level: 'warn', text: `${f.name}の胴つなぎの高さ（${h}m）が、屋根を支える桁（柱の上に渡す横向きの単管）とほぼ同じか、それより上になっています。そこには取り付けられないので、この面の胴つなぎは入れていません。桁より15cm以上低い高さにしてください。` });
       continue;
     }
     add('tie', '胴つなぎ', f.at(f.pts[0], h), f.at(f.pts[f.pts.length - 1], h));
@@ -171,12 +171,12 @@ export function compute(input) {
         brace(f.at(u, lo), f.at(v, yv)); placed++;
       }
     }
-    if (skipped) warnings.push({ level: 'warn', text: `${f.name}の筋交いは下端と上端の差が${MIN_RISE * 100}cm未満の区間があるため、その区間には入れていません。` });
+    if (skipped) warnings.push({ level: 'warn', text: `${f.name}の筋交いは、下端と上端の高さの差が${MIN_RISE * 100}cmより小さい区間があるため、その区間には入れていません。筋交いは斜めに長く入れるほど揺れを止める力が強くなり、差が小さいとほとんど効きません。「筋交いの下端」を下げるか、「筋交いの上端」を上げてください。` });
     if (placed) braceFaces++;
     if (placed && lo > 1.0) {
       const tieH = num('t' + k);
       if (!(tieH > 0 && Math.abs(tieH - lo) <= 0.3)) {
-        warnings.push({ level: 'info', text: `${f.name}の筋交いは${lo}mの高さから出ています。柱の途中から出す場合は、同じ高さに胴つなぎを入れると力が伝わりやすくなります。` });
+        warnings.push({ level: 'info', text: `${f.name}の筋交いが、地面の近くからではなく柱の途中（高さ${lo}m）から出ています。筋交いは、柱や桁と一緒に三角形を作ることで揺れを止める部材です。柱の途中から出すと、風で揺れたときに筋交いの根元が柱を横から押す形になり、その高さで柱が「く」の字に曲げられやすくなります。同じ高さに胴つなぎ（柱と柱をつなぐ横向きの単管）を入れると、押す力を隣の柱に逃がせるので、柱が曲がりにくくなります。この面の「胴つなぎの高さ」に ${lo} を入れてみてください。` });
       }
     }
   }
@@ -251,17 +251,21 @@ export function compute(input) {
 
   // 注意事項
   const maxBayX = W / (nx - 1), maxBayZ = D / (ny - 1);
-  if (slopeRatio < 0.1 - 1e-9) warnings.push({ level: 'warn', text: `屋根の勾配が約${(slopeRatio * 10).toFixed(1)}/10です。1/10より緩いと雨水が流れにくく、波板の重ね目から漏れやすくなります。` });
+  if (slopeRatio < 0.1 - 1e-9 && (mono || Hr > H1 + 0.05)) {
+    const needCm = Math.ceil((mono ? D : D / 2) * 0.1 * 100);
+    const how = mono ? `前と後ろの高さの差を${needCm}cm以上にしてください` : `棟と軒の高さの差を${needCm}cm以上にしてください`;
+    warnings.push({ level: 'warn', text: `屋根の傾き（勾配）が約${(slopeRatio * 10).toFixed(1)}/10です。これは、横に10進むあいだに${(slopeRatio * 10).toFixed(1)}しか下がらない、ということです。1/10より緩いと雨水がうまく流れず、波板を重ねた部分から雨が漏れやすくなります。${how}（傾きが1/10になる差です）。` });
+  }
   const rafterSpan = W / (nr - 1);
-  if (rafterSpan > 1.8 + 1e-9) warnings.push({ level: 'warn', text: `垂木の間隔（母屋が渡る距離）が${rafterSpan.toFixed(2)}mあります。1.8mを超えると母屋がたわみやすいので、垂木を増やしてください。` });
-  if (maxBayX > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `間口方向の柱の間隔が${maxBayX.toFixed(2)}mあります。3mを超えると桁がたわみやすいので、柱を増やしてください。` });
-  if (maxBayZ > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `奥行き方向の柱の間隔が${maxBayZ.toFixed(2)}mあります。3mを超えると垂木がたわみやすいので、柱を増やしてください。` });
-  if (ps > 0.9) warnings.push({ level: 'warn', text: '母屋の間隔が90cmを超えています。波板が風でバタつきやすく、割れやすくなります。' });
-  if (braceFaces < 3) warnings.push({ level: 'warn', text: '筋交いのある面が2面以下です。単管は揺れやすいので、少なくとも3面に入れることをおすすめします。' });
-  if (W * D > 10 + 1e-9) warnings.push({ level: 'info', text: `床面積が約${(W * D).toFixed(1)}㎡で10㎡を超えます。屋根と柱があると建築物扱いになり、建築確認申請が必要になる場合があります。` });
-  else warnings.push({ level: 'info', text: `床面積は約${(W * D).toFixed(1)}㎡です。防火地域・準防火地域でなければ、10㎡以下の増築は建築確認が不要な場合が多いですが、市区町村で確認してください。` });
-  warnings.push({ level: 'info', text: 'このツールは部材の数と費用の目安を出すもので、強度計算はしていません。雪の多い地域や風の強い場所では、柱や垂木を増やすなど余裕を持たせてください。' });
-  if (Math.max(H1, H2, mono ? 0 : Hr) > 3.5) warnings.push({ level: 'warn', text: '高さが3.5mを超えています。風を強く受けるので、筋交いと胴つなぎをしっかり入れてください。' });
+  if (rafterSpan > 1.8 + 1e-9) warnings.push({ level: 'warn', text: `垂木（屋根の傾きに沿って前後に渡す単管）の間隔が${rafterSpan.toFixed(2)}mあります。母屋（波板を留める横向きの単管）は垂木と垂木の間に渡されるので、この間隔が広いと、屋根の重さや雪で母屋が真ん中から下にたわみやすくなります。間隔が1.8m以下になるように「垂木の本数」を増やしてください。` });
+  if (maxBayX > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `前と後ろの列で、柱と柱の間が${maxBayX.toFixed(2)}mあります。3mを超えると、柱の上に渡す桁（横向きの単管）が真ん中で下にたわみやすくなります。「間口方向の柱の本数」を増やしてください。` });
+  if (maxBayZ > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `左右の列で、柱と柱の間が${maxBayZ.toFixed(2)}mあります。3mを超えると、垂木（屋根の傾きに沿って前後に渡す単管）が真ん中で下にたわみやすくなります。「奥行き方向の柱の本数」を増やしてください。` });
+  if (ps > 0.9) warnings.push({ level: 'warn', text: '母屋（波板を留める横向きの単管）の間隔が90cmを超えています。波板を支える場所が少ないと、強い風で波板がバタついて割れたり、留め具が外れて飛ばされたりしやすくなります。「母屋の間隔」を60〜90cmにしてください。' });
+  if (braceFaces < 3) warnings.push({ level: 'warn', text: `筋交い（斜めに入れる単管）が入っている面が${braceFaces}面しかありません。単管を四角に組んだだけだと、横から押されたときに平行四辺形のようにグラグラ傾いてしまいます。この揺れを止められるのは、斜めの筋交いが入っている面だけです。出入りする前面を除いた3面には入れるのがおすすめです。` });
+  if (W * D > 10 + 1e-9) warnings.push({ level: 'info', text: `床面積が約${(W * D).toFixed(1)}㎡あります。屋根と柱があるものは、小さくても法律上「建物」として扱われます。10㎡を超えると、原則として役所への建築確認申請が必要になります。作る前に、市区町村の建築指導課などに相談してください。` });
+  else warnings.push({ level: 'info', text: `床面積は約${(W * D).toFixed(1)}㎡です。屋根と柱があるものは、小さくても法律上「建物」として扱われます。ただ、10㎡以下で、防火地域・準防火地域でなければ、建築確認申請はいらないことが多いです。念のため、市区町村の建築指導課などで確認してください。` });
+  warnings.push({ level: 'info', text: 'このツールは、部材の本数と費用の目安を出すためのものです。「この組み方で雪や風に耐えられるか」という強度の計算はしていません。雪がよく積もる地域や、台風・強風が多い場所では、柱・垂木・筋交いを多めにしてください。不安なときは、工務店などに相談すると安心です。' });
+  if (Math.max(H1, H2, mono ? 0 : Hr) > 3.5) warnings.push({ level: 'warn', text: '高さが3.5mを超えています。背が高いほど風を受けたときに大きく揺れ、柱の根元のアンカーにも大きな力がかかります。筋交いを4面すべてに入れ、胴つなぎも入れてください。' });
 
   return {
     params: p, members, memberTable, items, total, clamps: cl, joints, bases, anchors, caps,
