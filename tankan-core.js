@@ -13,7 +13,10 @@ export const DEFAULTS = {
   W: 3.0, D: 3.0, roofType: 'mono', H1: 3.0, H2: 2.6, Hr: 3.5,
   nx: 2, ny: 2, nr: 3,
   oe: 0.2, os: 0.15, ps: 0.7, roofing: true,
-  tieH: 0, bF: false, bB: true, bL: true, bR: true, braceStyle: 'single', hiuchi: true,
+  bF: false, bB: true, bL: true, bR: true, braceStyle: 'single', hiuchi: true,
+  bFlo: 0.15, bBlo: 0.15, bLlo: 0.15, bRlo: 0.15, // 筋交いの下端の高さ
+  bFhi: 0, bBhi: 0, bLhi: 0, bRhi: 0,             // 筋交いの上端の高さ（0 = 桁まで）
+  tF: 0, tB: 0, tL: 0, tR: 0,                     // 胴つなぎの高さ（0 = なし）
   margin: 0.1, anchorsPerBase: 4,
   // 単価（円・税込の目安）
   pp1: 900, pp15: 1200, pp2: 1400, pp25: 1700, pp3: 1950, pp35: 2200, pp4: 2400, pp5: 3100, pp6: 3700,
@@ -46,6 +49,8 @@ export function sheetPlan(slen) {
 
 export function compute(input) {
   const p = { ...DEFAULTS, ...input };
+  // 旧バージョンの共有URL（胴つなぎの高さが1つだけ）に対応
+  if (Number(input?.tieH) > 0) for (const k of ['F', 'B', 'L', 'R']) if (input['t' + k] == null) p['t' + k] = Number(input.tieH);
   const num = (k) => Number(p[k]);
   const W = num('W'), D = num('D');
   const nx = Math.max(2, Math.round(num('nx'))), ny = Math.max(2, Math.round(num('ny')));
@@ -124,34 +129,57 @@ export function compute(input) {
     slopes.push({ slen, pts: [[-os, Hr, half], [W + os, Hr, half], [W + os, yE, D + oe], [-os, yE, D + oe]] });
   }
 
-  // 胴つなぎ
-  const tieH = num('tieH');
-  if (tieH > 0) {
-    add('tie', '胴つなぎ', [0, tieH, 0], [W, tieH, 0]);
-    add('tie', '胴つなぎ', [0, tieH, D], [W, tieH, D]);
-    add('tie', '胴つなぎ', [0, tieH, 0], [0, tieH, D]);
-    add('tie', '胴つなぎ', [W, tieH, 0], [W, tieH, D]);
-    cl.fixed += 2 * nx + 2 * ny;
-    if (tieH >= Math.min(H1, H2) - 0.2) warnings.push({ level: 'warn', text: '胴つなぎの高さが桁に近すぎます。' });
+  // 面ごとの定義（前面 z=0 / 後面 z=D / 左面 x=0 / 右面 x=W）
+  const truthy = (v) => v === true || v === 'true' || v === 1 || v === '1';
+  const FACES = {
+    F: { name: '前面', pts: xs, at: (t, y) => [t, y, 0], top: () => H1 },
+    B: { name: '後面', pts: xs, at: (t, y) => [t, y, D], top: () => H2 },
+    L: { name: '左面', pts: zs, at: (t, y) => [0, y, t], top: (t) => hAt(t) },
+    R: { name: '右面', pts: zs, at: (t, y) => [W, y, t], top: (t) => hAt(t) },
+  };
+
+  // 胴つなぎ（面ごとに高さを変えられる。0 で入れない）
+  for (const [k, f] of Object.entries(FACES)) {
+    const h = num('t' + k);
+    if (!(h > 0)) continue;
+    const minTop = Math.min(...f.pts.map((t) => f.top(t)));
+    if (h >= minTop - 0.15) {
+      warnings.push({ level: 'warn', text: `${f.name}の胴つなぎ（${h}m）が桁の高さに近すぎるか超えているため、入れていません。` });
+      continue;
+    }
+    add('tie', '胴つなぎ', f.at(f.pts[0], h), f.at(f.pts[f.pts.length - 1], h));
+    cl.fixed += f.pts.length;
   }
 
-  // 筋交い
-  const bBot = 0.15, bTop = 0.12;
+  // 筋交い（面ごとに下端・上端の高さを変えられる。上端 0 は桁まで）
+  const bTop = 0.12, MIN_RISE = 0.4;
   const X = p.braceStyle === 'x';
   const brace = (a, b) => { add('brace', '筋交い', a, b); cl.swivel += 2; };
-  const faceBraces = (pts, mk) => {
-    for (let i = 0; i < pts.length - 1; i++) {
-      const [a, b] = i % 2 === 0 ? [pts[i], pts[i + 1]] : [pts[i + 1], pts[i]];
-      brace(mk(a, bBot), mk(b, null));
-      if (X) brace(mk(b, bBot), mk(a, null));
+  let braceFaces = 0;
+  for (const [k, f] of Object.entries(FACES)) {
+    if (!truthy(p['b' + k])) continue;
+    const lo = Math.max(0.05, num('b' + k + 'lo'));
+    const hiIn = num('b' + k + 'hi');
+    const hiAt = (t) => (hiIn > 0 ? Math.min(hiIn, f.top(t) - bTop) : f.top(t) - bTop);
+    let skipped = 0, placed = 0;
+    for (let i = 0; i < f.pts.length - 1; i++) {
+      const [a, b] = i % 2 === 0 ? [f.pts[i], f.pts[i + 1]] : [f.pts[i + 1], f.pts[i]];
+      const pairs = X ? [[a, b], [b, a]] : [[a, b]];
+      for (const [u, v] of pairs) {
+        const yv = hiAt(v);
+        if (yv - lo < MIN_RISE) { skipped++; continue; }
+        brace(f.at(u, lo), f.at(v, yv)); placed++;
+      }
     }
-  };
-  const truthy = (v) => v === true || v === 'true' || v === 1 || v === '1';
-  if (truthy(p.bF)) faceBraces(xs, (x, y) => [x, y ?? H1 - bTop, 0]);
-  if (truthy(p.bB)) faceBraces(xs, (x, y) => [x, y ?? H2 - bTop, D]);
-  if (truthy(p.bL)) faceBraces(zs, (z, y) => [0, y ?? hAt(z) - bTop, z]);
-  if (truthy(p.bR)) faceBraces(zs, (z, y) => [W, y ?? hAt(z) - bTop, z]);
-  const braceFaces = ['bF', 'bB', 'bL', 'bR'].filter((k) => truthy(p[k])).length;
+    if (skipped) warnings.push({ level: 'warn', text: `${f.name}の筋交いは下端と上端の差が${MIN_RISE * 100}cm未満の区間があるため、その区間には入れていません。` });
+    if (placed) braceFaces++;
+    if (placed && lo > 1.0) {
+      const tieH = num('t' + k);
+      if (!(tieH > 0 && Math.abs(tieH - lo) <= 0.3)) {
+        warnings.push({ level: 'info', text: `${f.name}の筋交いは${lo}mの高さから出ています。柱の途中から出す場合は、同じ高さに胴つなぎを入れると力が伝わりやすくなります。` });
+      }
+    }
+  }
 
   // 火打ち（上部の水平な角補強）
   if (truthy(p.hiuchi)) {

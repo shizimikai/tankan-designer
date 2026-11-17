@@ -134,13 +134,24 @@ const FIELDS = [
   { g: '屋根', id: 'os', label: 'けらばの出（左右）', unit: 'm', step: 0.05, min: 0, max: 1 },
   { g: '屋根', id: 'ps', label: '母屋の間隔', unit: 'm', step: 0.05, min: 0.3, max: 1.5, hint: '波板を留める横の材。60〜90cmが目安' },
   { g: '屋根', id: 'roofing', label: '波板を張る', type: 'check' },
-  { g: '補強', id: 'bF', label: '筋交い：前面', type: 'check', hint: '出入りする面は外すことが多いです' },
-  { g: '補強', id: 'bB', label: '筋交い：後面', type: 'check' },
-  { g: '補強', id: 'bL', label: '筋交い：左面', type: 'check' },
-  { g: '補強', id: 'bR', label: '筋交い：右面', type: 'check' },
   { g: '補強', id: 'braceStyle', label: '筋交いの入れ方', type: 'select', options: [['single', '片筋交い'], ['x', 'たすき（X）']] },
   { g: '補強', id: 'hiuchi', label: '火打ち（上の四隅）', type: 'check', hint: '上部の四隅に入れる水平の斜材。ねじれを防ぎます' },
-  { g: '補強', id: 'tieH', label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 4, hint: '0 で入れない。入れると全体がしっかりします' },
+  { g: '前面', id: 'bF', label: '筋交いを入れる', type: 'check', hint: '出入りする面は外すか、上の方だけに入れることが多いです' },
+  { g: '前面', id: 'bFlo', label: '筋交いの下端', unit: 'm', step: 0.1, min: 0.05, max: 5, show: (p) => p.bF === true || p.bF === 'true', hint: '柱の途中から出すときは高さを上げます' },
+  { g: '前面', id: 'bFhi', label: '筋交いの上端', unit: 'm', step: 0.1, min: 0, max: 6, show: (p) => p.bF === true || p.bF === 'true', hint: '0 で桁まで' },
+  { g: '前面', id: 'tF', label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 5, hint: '0 で入れない。面ごとに高さを変えられます' },
+  { g: '後面', id: 'bB', label: '筋交いを入れる', type: 'check' },
+  { g: '後面', id: 'bBlo', label: '筋交いの下端', unit: 'm', step: 0.1, min: 0.05, max: 5, show: (p) => p.bB === true || p.bB === 'true' },
+  { g: '後面', id: 'bBhi', label: '筋交いの上端', unit: 'm', step: 0.1, min: 0, max: 6, show: (p) => p.bB === true || p.bB === 'true' },
+  { g: '後面', id: 'tB', label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 5 },
+  { g: '左面', id: 'bL', label: '筋交いを入れる', type: 'check' },
+  { g: '左面', id: 'bLlo', label: '筋交いの下端', unit: 'm', step: 0.1, min: 0.05, max: 5, show: (p) => p.bL === true || p.bL === 'true' },
+  { g: '左面', id: 'bLhi', label: '筋交いの上端', unit: 'm', step: 0.1, min: 0, max: 6, show: (p) => p.bL === true || p.bL === 'true' },
+  { g: '左面', id: 'tL', label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 5 },
+  { g: '右面', id: 'bR', label: '筋交いを入れる', type: 'check' },
+  { g: '右面', id: 'bRlo', label: '筋交いの下端', unit: 'm', step: 0.1, min: 0.05, max: 5, show: (p) => p.bR === true || p.bR === 'true' },
+  { g: '右面', id: 'bRhi', label: '筋交いの上端', unit: 'm', step: 0.1, min: 0, max: 6, show: (p) => p.bR === true || p.bR === 'true' },
+  { g: '右面', id: 'tR', label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 5 },
   { g: '細かい設定', adv: true, id: 'margin', label: '単管の余長', unit: 'm', step: 0.05, min: 0, max: 0.5, hint: 'クランプでつかむ分の余り。この分を足した長さ以上の定尺を選びます' },
   { g: '細かい設定', adv: true, id: 'anchorsPerBase', label: 'ベース1個のアンカー本数', unit: '本', step: 1, min: 1, max: 4 },
   { g: '細かい設定', adv: true, id: 'sheetWork', label: '波板1枚の働き幅', unit: 'm', step: 0.01, min: 0.3, max: 1, hint: '重ねしろを引いた有効幅' },
@@ -163,6 +174,9 @@ try {
   const h = location.hash.slice(1);
   if (h) Object.assign(state, JSON.parse(decodeURIComponent(h)));
   else { const s = localStorage.getItem('tankan-designer'); if (s) Object.assign(state, JSON.parse(s)); }
+  // 旧バージョン：胴つなぎ1つの高さ → 4面に展開
+  if (Number(state.tieH) > 0) { for (const k of ['F', 'B', 'L', 'R']) if (!(Number(state['t' + k]) > 0)) state['t' + k] = Number(state.tieH); }
+  delete state.tieH;
 } catch (e) { /* 無視 */ }
 
 function diffState() {
