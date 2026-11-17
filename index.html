@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>単管パイプ屋根 設計ツール</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e3e0da;
+    --accent: #c2410c; --accent-soft: #fff1e8; --steel: #4b5563;
+    --warn: #b45309; --warn-bg: #fff7e6; --err: #b91c1c; --err-bg: #fdecec; --info: #1d4ed8; --info-bg: #eef3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", system-ui, sans-serif; font-size: 14px; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .02em; }
+  header span { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: 300px 1fr; gap: 0; min-height: calc(100vh - 52px); }
+  aside { align-self: start; background: var(--panel); border-right: 1px solid var(--line); padding: 8px 16px 40px; overflow-y: auto; max-height: calc(100vh - 52px); position: sticky; top: 0; }
+  fieldset { border: none; padding: 0; margin: 14px 0 6px; }
+  legend { font-weight: 700; font-size: 12px; color: var(--accent); letter-spacing: .08em; padding: 0; margin-bottom: 6px; }
+  .f { display: grid; grid-template-columns: 1fr 92px; align-items: center; gap: 6px; padding: 4px 0; }
+  .f label { font-size: 13px; }
+  .f .hint { grid-column: 1 / -1; color: var(--muted); font-size: 11px; margin-top: -2px; line-height: 1.5; }
+  .f input[type=number], .f select { width: 100%; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: #fff; text-align: right; }
+  .f select { text-align: left; }
+  .f .unit { position: relative; }
+  .f .unit::after { content: attr(data-unit); position: absolute; right: -2px; top: 50%; transform: translate(100%, -50%); font-size: 11px; color: var(--muted); }
+  .f.check { grid-template-columns: 1fr auto; }
+  .f input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+  details { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
+  summary { cursor: pointer; font-weight: 700; font-size: 12px; color: var(--steel); }
+  section#right { display: flex; flex-direction: column; min-width: 0; }
+  #viewer { position: relative; height: 56vh; min-height: 340px; background: linear-gradient(#e9eef3, #f6f4f0); border-bottom: 1px solid var(--line); }
+  #viewer canvas { display: block; }
+  .vtools { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; z-index: 2; }
+  .vtools button, .btn { border: 1px solid var(--line); background: rgba(255,255,255,.92); border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 12px; cursor: pointer; color: var(--ink); }
+  .vtools button[aria-pressed=true] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .legend3d { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 10px; flex-wrap: wrap; font-size: 11px; color: var(--steel); background: rgba(255,255,255,.85); padding: 5px 10px; border-radius: 8px; }
+  .legend3d i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .dimlabel { font-size: 11px; background: rgba(31,35,40,.82); color: #fff; padding: 2px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none; }
+  #results { padding: 18px 22px 60px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .card .k { font-size: 11px; color: var(--muted); }
+  .card .v { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .card .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .card.total { background: var(--accent-soft); border-color: #f5c9ad; }
+  .card.total .v { color: var(--accent); }
+  .warns { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 6px; }
+  .warns li { padding: 8px 12px; border-radius: 8px; font-size: 12.5px; line-height: 1.6; }
+  .warns .warn { background: var(--warn-bg); color: var(--warn); }
+  .warns .error { background: var(--err-bg); color: var(--err); font-weight: 700; }
+  .warns .info { background: var(--info-bg); color: var(--info); }
+  h2 { font-size: 14px; margin: 26px 0 8px; display: flex; align-items: center; gap: 10px; }
+  h2 .sub { font-weight: 400; color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; }
+  th { background: #faf9f7; font-size: 11px; color: var(--muted); font-weight: 600; }
+  td.n, th.n { text-align: right; }
+  tr.grp td { background: #faf9f7; font-size: 11px; font-weight: 700; color: var(--steel); }
+  tbody tr.click { cursor: pointer; }
+  tbody tr.click:hover, tbody tr.sel { background: var(--accent-soft); }
+  tfoot td { font-weight: 700; }
+  .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+  .btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .foot { color: var(--muted); font-size: 11px; margin-top: 22px; line-height: 1.7; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  @media (max-width: 820px) {
+    main { grid-template-columns: 1fr; }
+    aside { position: static; max-height: none; border-right: none; border-bottom: 1px solid var(--line); order: 2; }
+    section#right { order: 1; }
+    #viewer { height: 46vh; }
+    header span, .legend3d { display: none; }
+  }
+  @media print {
+    aside, .vtools, .actions, header span { display: none; }
+    main { display: block; }
+    #viewer { height: 360px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>単管パイプ屋根 設計ツール</h1>
+  <span>寸法を入れると、骨組みの3D・部材の本数・購入リスト・概算費用が出ます</span>
+</header>
+<main>
+  <aside id="panel"></aside>
+  <section id="right">
+    <div id="viewer">
+      <div class="vtools">
+        <button data-view="persp">斜めから</button>
+        <button data-view="front">正面</button>
+        <button data-view="side">側面</button>
+        <button data-view="top">真上</button>
+        <button id="tRoof" aria-pressed="true">屋根</button>
+        <button id="tDims" aria-pressed="true">寸法</button>
+      </div>
+      <div class="legend3d" id="legend3d"></div>
+    </div>
+    <div id="results"></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { compute, DEFAULTS, STD_PIPES, SHEETS, pipeKey, sheetKey } from './tankan-core.js';
+
+// ---------- 入力項目 ----------
+const isMono = (p) => p.roofType === 'mono';
+const FIELDS = [
+  { g: '基本寸法', id: 'W', label: '間口（幅）', unit: 'm', step: 0.1, min: 1, max: 15 },
+  { g: '基本寸法', id: 'D', label: '奥行き', unit: 'm', step: 0.1, min: 1, max: 10 },
+  { g: '基本寸法', id: 'roofType', label: '屋根の形', type: 'select', options: [['mono', '片流れ'], ['gable', '切妻（三角）']] },
+  { g: '基本寸法', id: 'H1', label: (p) => (isMono(p) ? '前の高さ' : '軒の高さ'), unit: 'm', step: 0.1, min: 1.5, max: 5, hint: '地面（コンクリート上面）から桁までの高さ' },
+  { g: '基本寸法', id: 'H2', label: '後ろの高さ', unit: 'm', step: 0.1, min: 1.5, max: 5, show: isMono, hint: '前より低くすると後ろに水が流れます' },
+  { g: '基本寸法', id: 'Hr', label: '棟の高さ', unit: 'm', step: 0.1, min: 1.5, max: 6, show: (p) => !isMono(p) },
+  { g: '柱と垂木', id: 'nx', label: '間口方向の柱の本数', unit: '本', step: 1, min: 2, max: 8, hint: '前と後ろ、それぞれの列の本数' },
+  { g: '柱と垂木', id: 'ny', label: '奥行き方向の柱の本数', unit: '本', step: 1, min: 2, max: 6, hint: '左右の列の本数（角の柱を含む）' },
+  { g: '柱と垂木', id: 'nr', label: '垂木の本数', unit: '本', step: 1, min: 2, max: 12, hint: '屋根の傾きに沿う材。柱の本数以上にします' },
+  { g: '屋根', id: 'oe', label: '軒の出（前後）', unit: 'm', step: 0.05, min: 0, max: 1 },
+  { g: '屋根', id: 'os', label: 'けらばの出（左右）', unit: 'm', step: 0.05, min: 0, max: 1 },
+  { g: '屋根', id: 'ps', label: '母屋の間隔', unit: 'm', step: 0.05, min: 0.3, max: 1.5, hint: '波板を留める横の材。60〜90cmが目安' },
+  { g: '屋根', id: 'roofing', label: '波板を張る', type: 'check' },
+  { g: '補強', id: 'bF', label: '筋交い：前面', type: 'check', hint: '出入りする面は外すことが多いです' },
+  { g: '補強', id: 'bB', label: '筋交い：後面', type: 'check' },
+  { g: '補強', id: 'bL', label: '筋交い：左面', type: 'check' },
+  { g: '補強', id: 'bR', label: '筋交い：右面', type: 'check' },
+  { g: '補強', id: 'braceStyle', label: '筋交いの入れ方', type: 'select', options: [['single', '片筋交い'], ['x', 'たすき（X）']] },
+  { g: '補強', id: 'hiuchi', label: '火打ち（上の四隅）', type: 'check', hint: '上部の四隅に入れる水平の斜材。ねじれを防ぎます' },
+  { g: '補強', id: 'tieH', label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 4, hint: '0 で入れない。入れると全体がしっかりします' },
+  { g: '細かい設定', adv: true, id: 'margin', label: '単管の余長', unit: 'm', step: 0.05, min: 0, max: 0.5, hint: 'クランプでつかむ分の余り。この分を足した長さ以上の定尺を選びます' },
+  { g: '細かい設定', adv: true, id: 'anchorsPerBase', label: 'ベース1個のアンカー本数', unit: '本', step: 1, min: 1, max: 4 },
+  { g: '細かい設定', adv: true, id: 'sheetWork', label: '波板1枚の働き幅', unit: 'm', step: 0.01, min: 0.3, max: 1, hint: '重ねしろを引いた有効幅' },
+  { g: '細かい設定', adv: true, id: 'hookPitch', label: '波板フックの間隔', unit: 'm', step: 0.05, min: 0.1, max: 0.6 },
+  ...STD_PIPES.map((s) => ({ g: '単価（円・税込）', adv: true, id: pipeKey(s), label: `単管 ${s}m`, unit: '円', step: 10, min: 0 })),
+  { g: '単価（円・税込）', adv: true, id: 'cFixed', label: '直交クランプ', unit: '円', step: 10, min: 0 },
+  { g: '単価（円・税込）', adv: true, id: 'cSwivel', label: '自在クランプ', unit: '円', step: 10, min: 0 },
+  { g: '単価（円・税込）', adv: true, id: 'cJoint', label: 'ジョイント', unit: '円', step: 10, min: 0 },
+  { g: '単価（円・税込）', adv: true, id: 'cBase', label: '固定ベース', unit: '円', step: 10, min: 0 },
+  { g: '単価（円・税込）', adv: true, id: 'cAnchor', label: 'アンカー', unit: '円', step: 10, min: 0 },
+  { g: '単価（円・税込）', adv: true, id: 'cCap', label: 'キャップ', unit: '円', step: 10, min: 0 },
+  ...SHEETS.map((s) => ({ g: '単価（円・税込）', adv: true, id: sheetKey(s.shaku), label: `波板 ${s.shaku}尺`, unit: '円', step: 10, min: 0 })),
+  { g: '単価（円・税込）', adv: true, id: 'cHook', label: '波板フック', unit: '円', step: 1, min: 0 },
+  { g: '単価（円・税込）', adv: true, id: 'cRidge', label: '棟包み（1mあたり）', unit: '円', step: 10, min: 0 },
+];
+
+// ---------- 状態 ----------
+let state = { ...DEFAULTS };
+try {
+  const h = location.hash.slice(1);
+  if (h) Object.assign(state, JSON.parse(decodeURIComponent(h)));
+  else { const s = localStorage.getItem('tankan-designer'); if (s) Object.assign(state, JSON.parse(s)); }
+} catch (e) { /* 無視 */ }
+
+function diffState() {
+  const d = {};
+  for (const k in state) if (String(state[k]) !== String(DEFAULTS[k])) d[k] = state[k];
+  return d;
+}
+
+// ---------- フォーム ----------
+const panel = document.getElementById('panel');
+const fieldEls = {};
+function buildForm() {
+  panel.innerHTML = '';
+  const groups = new Map();
+  let adv = null;
+  for (const f of FIELDS) {
+    let fs = groups.get(f.g);
+    if (!fs) {
+      fs = document.createElement('fieldset');
+      fs.innerHTML = `<legend>${f.g}</legend>`;
+      groups.set(f.g, fs);
+      if (f.adv) {
+        if (!adv) { adv = document.createElement('details'); adv.innerHTML = '<summary>細かい設定・単価を変える</summary>'; panel.appendChild(adv); }
+        adv.appendChild(fs);
+      } else panel.appendChild(fs);
+    }
+    const row = document.createElement('div');
+    row.className = 'f' + (f.type === 'check' ? ' check' : '');
+    const lab = document.createElement('label');
+    lab.htmlFor = 'f_' + f.id;
+    let input;
+    if (f.type === 'select') {
+      input = document.createElement('select');
+      f.options.forEach(([v, t]) => input.add(new Option(t, v)));
+      input.value = state[f.id];
+      row.append(lab, input);
+    } else if (f.type === 'check') {
+      input = document.createElement('input'); input.type = 'checkbox';
+      input.checked = state[f.id] === true || state[f.id] === 'true';
+      row.append(lab, input);
+    } else {
+      input = document.createElement('input'); input.type = 'number';
+      Object.assign(input, { step: f.step, min: f.min ?? '', max: f.max ?? '' });
+      input.value = state[f.id];
+      const wrap = document.createElement('div'); wrap.className = 'unit'; wrap.dataset.unit = f.unit || '';
+      wrap.appendChild(input);
+      row.append(lab, wrap);
+    }
+    input.id = 'f_' + f.id;
+    if (f.hint) { const h = document.createElement('div'); h.className = 'hint'; h.textContent = f.hint; row.appendChild(h); }
+    input.addEventListener('input', () => {
+      if (f.type === 'check') state[f.id] = input.checked;
+      else if (f.type === 'select') state[f.id] = input.value;
+      else { const v = parseFloat(input.value); if (!Number.isFinite(v)) return; state[f.id] = v; }
+      update();
+    });
+    fs.appendChild(row);
+    fieldEls[f.id] = { f, row, lab, input };
+  }
+  const reset = document.createElement('button');
+  reset.className = 'btn'; reset.textContent = '最初の値に戻す'; reset.style.marginTop = '18px';
+  reset.onclick = () => { state = { ...DEFAULTS }; buildForm(); update(true); };
+  panel.appendChild(reset);
+}
+function refreshFormVisibility() {
+  for (const id in fieldEls) {
+    const { f, row, lab } = fieldEls[id];
+    lab.textContent = typeof f.label === 'function' ? f.label(state) : f.label;
+    row.style.display = f.show && !f.show(state) ? 'none' : '';
+  }
+}
+
+// ---------- 3D ----------
+const viewer = document.getElementById('viewer');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+viewer.appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer();
+Object.assign(labelRenderer.domElement.style, { position: 'absolute', top: '0', left: '0', pointerEvents: 'none' });
+viewer.appendChild(labelRenderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0xb8b0a4, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.4); sun.position.set(5, 9, 6); scene.add(sun);
+const grid = new THREE.GridHelper(30, 60, 0xc9c4bb, 0xdcd8d0); grid.position.y = -0.101; scene.add(grid);
+const world = new THREE.Group(); scene.add(world);
+
+const KIND = {
+  post: { c: 0x6b7480, t: '柱' }, beam: { c: 0x55606d, t: '桁・陸梁・棟木' }, tiebeam: { c: 0x55606d }, ridge: { c: 0x55606d }, king: { c: 0x6b7480 },
+  rafter: { c: 0x3f6f9e, t: '垂木' }, purlin: { c: 0x8aa4bd, t: '母屋' }, tie: { c: 0x7a8c5a, t: '胴つなぎ' },
+  brace: { c: 0xd97706, t: '筋交い・火打ち' }, hiuchi: { c: 0xd97706 },
+};
+const YOFF = { rafter: 0.049, purlin: 0.098 };
+const mats = {};
+for (const k in KIND) mats[k] = new THREE.MeshStandardMaterial({ color: KIND[k].c, metalness: 0.55, roughness: 0.45 });
+const selMat = new THREE.MeshStandardMaterial({ color: 0xe11d48, emissive: 0x8a0f2c, metalness: 0.3, roughness: 0.5 });
+const cyl = new THREE.CylinderGeometry(0.0243, 0.0243, 1, 14);
+const up = new THREE.Vector3(0, 1, 0);
+let roofGroup, dimGroup, meshes = [], selectedKey = null;
+let showRoof = true, showDims = true, lastDims = null;
+
+document.getElementById('legend3d').innerHTML = Object.values(KIND).filter((k) => k.t)
+  .map((k) => `<span><i style="background:#${k.c.toString(16).padStart(6, '0')}"></i>${k.t}</span>`).join('');
+
+function clearGroup(g) {
+  while (g.children.length) {
+    const c = g.children.pop();
+    c.traverse?.((o) => { if (o.isCSS2DObject) o.element.remove(); });
+    if (c.geometry && c.geometry !== cyl) c.geometry.dispose();
+  }
+}
+
+function label(text, pos) {
+  const el = document.createElement('div'); el.className = 'dimlabel'; el.textContent = text;
+  const o = new CSS2DObject(el); o.position.set(...pos); o.visible = showDims; return o;
+}
+function dimLine(a, b) {
+  const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...a), new THREE.Vector3(...b)]);
+  return new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x1f2328 }));
+}
+
+function build(r) {
+  clearGroup(world); meshes = [];
+  const { W, D, H1, H2, Hr, mono, oe, os } = r.dims;
+  // コンクリート
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, 0.1, D + 0.4), new THREE.MeshStandardMaterial({ color: 0xd3cfc8, roughness: 0.95 }));
+  slab.position.set(W / 2, -0.05, D / 2); world.add(slab);
+  // 部材
+  for (const m of r.members) {
+    const off = YOFF[m.kind] || 0;
+    const a = new THREE.Vector3(m.a[0], m.a[1] + off, m.a[2]);
+    const b = new THREE.Vector3(m.b[0], m.b[1] + off, m.b[2]);
+    const dir = b.clone().sub(a); const len = dir.length();
+    const mesh = new THREE.Mesh(cyl, mats[m.kind]);
+    mesh.scale.set(1, len, 1);
+    mesh.quaternion.setFromUnitVectors(up, dir.normalize());
+    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+    mesh.userData = { key: m.key, kind: m.kind };
+    world.add(mesh); meshes.push(mesh);
+    if (m.kind === 'post') {
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.012, 0.15), new THREE.MeshStandardMaterial({ color: 0x3b3f45 }));
+      base.position.set(m.a[0], 0.006, m.a[2]); world.add(base);
+    }
+  }
+  // 屋根
+  roofGroup = new THREE.Group();
+  if (r.roof) {
+    const rm = new THREE.MeshStandardMaterial({ color: 0x9fd0f0, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false });
+    for (const s of r.slopes) {
+      const pts = s.pts.map((p) => new THREE.Vector3(p[0], p[1] + 0.13, p[2]));
+      const g = new THREE.BufferGeometry().setFromPoints([pts[0], pts[1], pts[2], pts[0], pts[2], pts[3]]);
+      g.computeVertexNormals();
+      roofGroup.add(new THREE.Mesh(g, rm));
+      const edge = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x5c8fb3 }));
+      roofGroup.add(edge);
+    }
+  }
+  roofGroup.visible = showRoof; world.add(roofGroup);
+  // 寸法
+  dimGroup = new THREE.Group();
+  const f = (v) => v.toFixed(2).replace(/\.?0+$/, '') + 'm';
+  const zf = -0.45, xl = -0.45;
+  dimGroup.add(dimLine([0, 0.02, zf], [W, 0.02, zf]), label('間口 ' + f(W), [W / 2, 0.02, zf]));
+  dimGroup.add(dimLine([W + 0.45, 0.02, 0], [W + 0.45, 0.02, D]), label('奥行 ' + f(D), [W + 0.45, 0.02, D / 2]));
+  dimGroup.add(dimLine([xl, 0, 0], [xl, H1, 0]), label((mono ? '前 ' : '軒 ') + f(H1), [xl, H1 / 2, 0]));
+  if (mono) dimGroup.add(dimLine([xl, 0, D], [xl, H2, D]), label('後 ' + f(H2), [xl, H2 / 2, D]));
+  else dimGroup.add(dimLine([xl, 0, D / 2], [xl, Hr, D / 2]), label('棟 ' + f(Hr), [xl, Hr / 2, D / 2]));
+  dimGroup.visible = showDims; world.add(dimGroup);
+  applySelection();
+  const dimsKey = [W, D, Math.max(H1, H2, mono ? 0 : Hr)].map((v) => v.toFixed(1)).join();
+  if (dimsKey !== lastDims) { setView(lastDims ? currentView : 'persp', r.dims); lastDims = dimsKey; }
+}
+
+let currentView = 'persp', lastDimsObj = null;
+function setView(v, d = lastDimsObj) {
+  if (!d) return; lastDimsObj = d; currentView = v;
+  const { W, D } = d; const H = Math.max(d.H1, d.H2, d.mono ? 0 : d.Hr);
+  const c = new THREE.Vector3(W / 2, H / 2, D / 2);
+  const R = (Math.max(W, D, H) * 1.7 + 1.2) * Math.max(1, 1.3 / camera.aspect);
+  const pos = { persp: [W / 2 - R * 0.55, H / 2 + R * 0.45, -R * 0.7], front: [W / 2, H / 2, -R], side: [W + R, H / 2, D / 2], top: [W / 2, R * 1.1, D / 2 - 0.001] }[v];
+  camera.position.set(...pos); controls.target.copy(c); controls.update();
+}
+document.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view)));
+document.getElementById('tRoof').onclick = (e) => { showRoof = !showRoof; e.target.setAttribute('aria-pressed', showRoof); if (roofGroup) roofGroup.visible = showRoof; };
+document.getElementById('tDims').onclick = (e) => {
+  showDims = !showDims; e.target.setAttribute('aria-pressed', showDims);
+  if (dimGroup) { dimGroup.visible = showDims; dimGroup.traverse((o) => { if (o.isCSS2DObject) o.visible = showDims; }); }
+};
+
+function applySelection() {
+  for (const m of meshes) m.material = m.userData.key === selectedKey ? selMat : mats[m.userData.kind];
+  document.querySelectorAll('tr[data-key]').forEach((tr) => tr.classList.toggle('sel', tr.dataset.key === selectedKey));
+}
+
+function resize() {
+  const w = viewer.clientWidth, h = viewer.clientHeight;
+  renderer.setSize(w, h); labelRenderer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewer);
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); labelRenderer.render(scene, camera); });
+
+// ---------- 結果 ----------
+const yen = (n) => '¥' + Math.round(n).toLocaleString('ja-JP');
+const fm = (v) => v.toFixed(2) + ' m';
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let last = null;
+
+function renderResults(r) {
+  const el = document.getElementById('results');
+  const order = { error: 0, warn: 1, info: 2 };
+  const warns = [...r.warnings].sort((a, b) => order[a.level] - order[b.level]);
+  let groupPrev = '';
+  const itemRows = r.items.map((it) => {
+    const head = it.group !== groupPrev ? `<tr class="grp"><td colspan="5">${it.group}</td></tr>` : '';
+    groupPrev = it.group;
+    return head + `<tr><td>${esc(it.name)}</td><td>${esc(it.spec)}</td><td class="n">${it.qty.toLocaleString('ja-JP')}</td><td class="n">${yen(it.unit)}</td><td class="n">${yen(it.subtotal)}</td></tr>`;
+  }).join('');
+  const memberRows = r.memberTable.map((g) => {
+    const c = '#' + KIND[g.kind].c.toString(16).padStart(6, '0');
+    const st = g.stock.joints ? `${g.stock.pieces.join('m + ')}m（ジョイント${g.stock.joints}）` : `${g.stock.pieces[0]}m`;
+    return `<tr class="click" data-key="${esc(g.key)}"><td><span class="swatch" style="background:${c}"></span>${esc(g.name)}</td><td class="n">${fm(g.len)}</td><td>${st}</td><td class="n">${g.count}</td></tr>`;
+  }).join('');
+  el.innerHTML = `
+    <div class="cards">
+      <div class="card total"><div class="k">概算の材料費</div><div class="v">${yen(r.total)}</div><div class="s">税込・ホームセンター価格の目安</div></div>
+      <div class="card"><div class="k">単管パイプ</div><div class="v">${r.pipeCount}本</div><div class="s">合計 ${r.pipeLength.toFixed(1)} m</div></div>
+      <div class="card"><div class="k">クランプ</div><div class="v">${r.clamps.fixed + r.clamps.swivel}個</div><div class="s">直交 ${r.clamps.fixed} ／ 自在 ${r.clamps.swivel}</div></div>
+      <div class="card"><div class="k">単管の重さ</div><div class="v">約${Math.round(r.weight)}kg</div><div class="s">軽量単管（約2.1kg/m）の場合</div></div>
+    </div>
+    <ul class="warns">${warns.map((w) => `<li class="${w.level}">${esc(w.text)}</li>`).join('')}</ul>
+    <h2>購入リスト <span class="sub">ホームセンターに持っていく用</span></h2>
+    <table><thead><tr><th>品名</th><th>規格</th><th class="n">数量</th><th class="n">単価</th><th class="n">小計</th></tr></thead>
+    <tbody>${itemRows}</tbody>
+    <tfoot><tr><td colspan="4">合計</td><td class="n">${yen(r.total)}</td></tr></tfoot></table>
+    <h2>部材リスト <span class="sub">行をクリックすると3Dで光ります</span></h2>
+    <table><thead><tr><th>部材</th><th class="n">必要な長さ</th><th>使う単管</th><th class="n">本数</th></tr></thead>
+    <tbody>${memberRows}</tbody></table>
+    <div class="actions">
+      <button class="btn primary" id="bShare">この設計のURLをコピー</button>
+      <button class="btn" id="bCsv">購入リストをCSVで保存</button>
+      <button class="btn" id="bPrint">印刷</button>
+    </div>
+    <p class="foot">
+      ・単価は2026年時点のホームセンター価格をもとにした目安です。「細かい設定・単価を変える」で実際の値段に直せます。<br>
+      ・クランプの数は、部材が交わる点を1か所1個で数えています。現場で継ぎ足しや補強を足す分、数個多めに買っておくと安心です。<br>
+      ・強度計算はしていません。積雪・強風地域では柱・垂木・筋交いを増やし、不安なら専門家に相談してください。
+    </p>`;
+  el.querySelectorAll('tr[data-key]').forEach((tr) => (tr.onclick = () => {
+    selectedKey = selectedKey === tr.dataset.key ? null : tr.dataset.key; applySelection();
+  }));
+  document.getElementById('bShare').onclick = async () => {
+    const url = location.href.split('#')[0] + '#' + encodeURIComponent(JSON.stringify(diffState()));
+    try { await navigator.clipboard.writeText(url); toast('URLをコピーしました'); } catch { prompt('このURLをコピーしてください', url); }
+  };
+  document.getElementById('bCsv').onclick = () => {
+    const rows = [['区分', '品名', '規格', '数量', '単価', '小計'], ...r.items.map((i) => [i.group, i.name, i.spec, i.qty, i.unit, i.subtotal]), ['', '合計', '', '', '', r.total]];
+    const csv = '﻿' + rows.map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = '単管_購入リスト.csv'; a.click(); URL.revokeObjectURL(a.href);
+  };
+  document.getElementById('bPrint').onclick = () => print();
+}
+
+function toast(t) { const el = document.getElementById('toast'); el.textContent = t; el.style.opacity = 1; setTimeout(() => (el.style.opacity = 0), 1600); }
+
+function update(resetView) {
+  refreshFormVisibility();
+  if (resetView) lastDims = null;
+  const r = compute(state); last = r;
+  build(r); renderResults(r);
+  const d = diffState();
+  try { localStorage.setItem('tankan-designer', JSON.stringify(state)); } catch (e) { /* 無視 */ }
+  history.replaceState(null, '', Object.keys(d).length ? '#' + encodeURIComponent(JSON.stringify(d)) : location.pathname + location.search);
+}
+
+buildForm();
+resize();
+update();
+</script>
+</body>
+</html>
