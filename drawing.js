@@ -208,9 +208,11 @@ export function drawSheet(r, meta = {}) {
   const typeName = mono ? '片流れ' : '切妻';
   const baseName = { slab: '土間コンクリートに固定', pincoro: 'ピンコロ（束石）', buried: '穴を掘ってコンクリートで固定', driven: '地面に打ち込み' }[base] || '';
   text(28, ty + 46, `${typeName}　間口 ${mm(W)} × 奥行 ${mm(D)} × 高さ ${mm(maxH)}　基礎：${baseName}　／　単位：mm`, { size: 11, anchor: 'start', fill: '#444' });
-  const scale = Math.round(1000 / (s * (420 / SHEET_W)) / 5) * 5;
+  // 印刷したときの縮尺（index.html の printSheet と同じ大きさで計算）
+  const printScale = (pw, ph) => { const w = Math.min(pw - 18, (ph - 18) * (SHEET_W / SHEET_H)); return Math.round(1000 / (s * (w / SHEET_W)) / 5) * 5; };
+  const scaleA3 = printScale(420, 297), scaleA4 = printScale(297, 210);
   text(SHEET_W - 28, ty + 26, `${meta.date || ''}`, { size: 11, anchor: 'end', fill: '#444' });
-  text(SHEET_W - 28, ty + 46, `A3横で印刷すると約1/${scale}　（単管パイプ設計ツールで作成）`, { size: 10, anchor: 'end', fill: '#777' });
+  text(SHEET_W - 28, ty + 46, `印刷したときの縮尺：A4横で約1/${scaleA4}、A3横で約1/${scaleA3}　（単管パイプ設計ツールで作成）`, { size: 10, anchor: 'end', fill: '#777' });
   let lx = 460;
   for (const [k, t] of LEGEND) {
     out.push(`<line x1="${lx}" y1="${ty + 22}" x2="${lx + 18}" y2="${ty + 22}" stroke="${COLORS[k]}" stroke-width="3" stroke-linecap="round"/>`);

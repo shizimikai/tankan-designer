@@ -571,13 +571,20 @@ function openSave(rec) {
 
 // ---------- 3面図 ----------
 function sheetSvg(r) { return drawSheet(r, { name: meta.name || '単管パイプ屋根', date: todayJa() }); }
-function printSheet(r) {
-  const w = window.open('', '_blank');
-  if (!w) { toast('ポップアップがブロックされました。SVGで保存して印刷してください'); return; }
-  w.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(meta.name || '3面図')}</title>
-    <style>@page{size:A3 landscape;margin:8mm}html,body{margin:0}svg{width:100%;height:auto;display:block}</style></head>
-    <body>${sheetSvg(r)}<script>setTimeout(function(){print()},300)<\/script></body></html>`);
-  w.document.close();
+// 用紙ごとの印刷できる範囲（mm、余白8mm）。図の縦横比（1188:840）を保ったまま、はみ出さない大きさにする
+const PAPER = { A3: { w: 420, h: 297 }, A4: { w: 297, h: 210 } };
+function printSheet(r, paper = 'A3') {
+  const P = PAPER[paper], m = 8, ratio = 1188 / 840;
+  const availW = P.w - 2 * m - 2, availH = P.h - 2 * m - 2; // 端数でページがあふれないよう2mm余裕をみる
+  const w = Math.min(availW, availH * ratio), h = w / ratio;
+  const win = window.open('', '_blank');
+  if (!win) { toast('ポップアップがブロックされました。SVGで保存して印刷してください'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${esc(meta.name || '3面図')}</title>
+    <style>@page{size:${paper} landscape;margin:${m}mm}html,body{margin:0;padding:0}
+    .page{width:${w.toFixed(1)}mm;height:${h.toFixed(1)}mm;margin:0 auto;overflow:hidden;page-break-inside:avoid;break-inside:avoid}
+    .page svg{display:block;width:100%;height:100%}</style></head>
+    <body><div class="page">${sheetSvg(r).replace(/ width="1188" height="840"/, '')}</div><script>setTimeout(function(){print()},300)<\/script></body></html>`);
+  win.document.close();
 }
 
 function renderResults(r) {
@@ -652,7 +659,8 @@ function renderResults(r) {
       <h2>3面図 <span class="sub">上・前・右から見た図。寸法の単位はmm</span></h2>
       <div class="sheet">${sheetSvg(r)}</div>
       <div class="actions">
-        <button class="btn primary" id="bSheetPrint">3面図を印刷（A3横）</button>
+        <button class="btn primary" id="bSheetPrintA4">3面図を印刷（A4横）</button>
+        <button class="btn" id="bSheetPrint">3面図を印刷（A3横）</button>
         <button class="btn" id="bSheetSvg">SVGで保存</button>
       </div>
       <p class="foot">・柱の位置や長さの確認用の簡単な図です。単管の太さやクランプのずれ（約5cm）は省いています。<br>・図の左右は、前に立って見たときの左右です。左面・右面の設定もこれに合わせています。</p>
@@ -711,7 +719,8 @@ function renderResults(r) {
   };
   $('bPrint').onclick = () => print();
   $('bSheetSvg').onclick = () => download(`${safeFile(meta.name || '単管')}_3面図.svg`, sheetSvg(r), 'image/svg+xml');
-  $('bSheetPrint').onclick = () => printSheet(r);
+  $('bSheetPrint').onclick = () => printSheet(r, 'A3');
+  $('bSheetPrintA4').onclick = () => printSheet(r, 'A4');
 
   // 保存・比較
   $('dName').oninput = (e) => {
