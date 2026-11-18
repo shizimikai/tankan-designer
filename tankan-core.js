@@ -17,11 +17,13 @@ export const DEFAULTS = {
   bFlo: 0.15, bBlo: 0.15, bLlo: 0.15, bRlo: 0.15, // 筋交いの下端の高さ
   bFhi: 0, bBhi: 0, bLhi: 0, bRhi: 0,             // 筋交いの上端の高さ（0 = 桁まで）
   tF: 0, tB: 0, tL: 0, tR: 0,                     // 胴つなぎの高さ（0 = なし）
+  base: 'slab', embed: 0.6, holeD: 0.25, // 基礎：slab=土間に固定 / pincoro=ピンコロ / buried=穴を掘ってコンクリート / driven=打ち込み
   margin: 0.1, anchorsPerBase: 4,
   // 単価（円・税込の目安）
   pp1: 900, pp15: 1200, pp2: 1400, pp25: 1700, pp3: 1950, pp35: 2200, pp4: 2400, pp5: 3100, pp6: 3700,
   cFixed: 350, cSwivel: 400, cJoint: 350, cBase: 900, cAnchor: 150, cCap: 60,
   sp6: 1500, sp7: 1750, sp8: 2000, sp9: 2250, sp10: 2500, sp12: 3000,
+  cPincoro: 400, cGravel: 350, cConcrete: 750, cDriveCap: 700,
   cHook: 40, hookPitch: 0.25, sheetWork: 0.58, cRidge: 900,
 };
 
@@ -68,14 +70,17 @@ export function compute(input) {
   const hAt = (z) => (mono ? H1 + ((H2 - H1) * z) / D : H1);
 
   if (!mono && Hr <= H1 + 0.05) {
-    warnings.push({ level: 'error', text: '棟（屋根のいちばん高いところ）の高さが、軒（屋根のいちばん低いところ）と同じか、それより低くなっています。これでは三角の屋根になりません。「棟の高さ」を「軒の高さ」より大きい数字にしてください。' });
+    warnings.push({ level: 'error', text: '[[棟]]の高さが、[[軒]]の高さと同じか、それより低くなっています。これでは三角の屋根になりません。「棟の高さ」を「軒の高さ」より大きい数字にしてください。' });
   }
 
   // 柱（外周のみ）
   const posts = [];
   xs.forEach((x) => { posts.push([x, 0]); posts.push([x, D]); });
   zs.slice(1, -1).forEach((z) => { posts.push([0, z]); posts.push([W, z]); });
-  posts.forEach(([x, z]) => add('post', '柱', [x, 0, z], [x, hAt(z), z]));
+  const base = ['slab', 'pincoro', 'buried', 'driven'].includes(p.base) ? p.base : 'slab';
+  const embed = base === 'buried' || base === 'driven' ? Math.max(0, num('embed')) : 0;
+  const holeD = num('holeD');
+  posts.forEach(([x, z]) => add('post', '柱', [x, -embed, z], [x, hAt(z), z]));
 
   // 桁（前・後）
   add('beam', '桁', [0, H1, 0], [W, H1, 0]);
@@ -144,7 +149,7 @@ export function compute(input) {
     if (!(h > 0)) continue;
     const minTop = Math.min(...f.pts.map((t) => f.top(t)));
     if (h >= minTop - 0.15) {
-      warnings.push({ level: 'warn', text: `${f.name}の胴つなぎの高さ（${h}m）が、屋根を支える桁（柱の上に渡す横向きの単管）とほぼ同じか、それより上になっています。そこには取り付けられないので、この面の胴つなぎは入れていません。桁より15cm以上低い高さにしてください。` });
+      warnings.push({ level: 'warn', text: `${f.name}の[[胴つなぎ]]の高さ（${h}m）が、[[桁]]とほぼ同じか、それより上になっています。そこには取り付けられないので、この面の胴つなぎは入れていません。桁より15cm以上低い高さにしてください。` });
       continue;
     }
     add('tie', '胴つなぎ', f.at(f.pts[0], h), f.at(f.pts[f.pts.length - 1], h));
@@ -171,12 +176,12 @@ export function compute(input) {
         brace(f.at(u, lo), f.at(v, yv)); placed++;
       }
     }
-    if (skipped) warnings.push({ level: 'warn', text: `${f.name}の筋交いは、下端と上端の高さの差が${MIN_RISE * 100}cmより小さい区間があるため、その区間には入れていません。筋交いは斜めに長く入れるほど揺れを止める力が強くなり、差が小さいとほとんど効きません。「筋交いの下端」を下げるか、「筋交いの上端」を上げてください。` });
+    if (skipped) warnings.push({ level: 'warn', text: `${f.name}の[[筋交い]]は、下端と上端の高さの差が${MIN_RISE * 100}cmより小さい区間があるため、その区間には入れていません。筋交いは斜めに長く入れるほど揺れを止める力が強く、差が小さいとほとんど効きません。「筋交いの下端」を下げるか、「筋交いの上端」を上げてください。` });
     if (placed) braceFaces++;
     if (placed && lo > 1.0) {
       const tieH = num('t' + k);
       if (!(tieH > 0 && Math.abs(tieH - lo) <= 0.3)) {
-        warnings.push({ level: 'info', text: `${f.name}の筋交いが、地面の近くからではなく柱の途中（高さ${lo}m）から出ています。筋交いは、柱や桁と一緒に三角形を作ることで揺れを止める部材です。柱の途中から出すと、風で揺れたときに筋交いの根元が柱を横から押す形になり、その高さで柱が「く」の字に曲げられやすくなります。同じ高さに胴つなぎ（柱と柱をつなぐ横向きの単管）を入れると、押す力を隣の柱に逃がせるので、柱が曲がりにくくなります。この面の「胴つなぎの高さ」に ${lo} を入れてみてください。` });
+        warnings.push({ level: 'info', text: `${f.name}の[[筋交い]]が、地面の近くではなく柱の途中（高さ${lo}m）から出ています。筋交いは、柱や[[桁]]と三角形を作って揺れを止めます。途中から出すと、揺れたときに筋交いの根元が柱を横から押す形になり、その高さで柱が「く」の字に曲がりやすくなります。同じ高さに[[胴つなぎ]]を入れると、押す力を隣の柱に逃がせます。この面の「胴つなぎの高さ」に ${lo} を入れてみてください。` });
       }
     }
   }
@@ -207,8 +212,12 @@ export function compute(input) {
   const order = ['post', 'beam', 'tiebeam', 'king', 'ridge', 'rafter', 'purlin', 'tie', 'brace', 'hiuchi'];
   const memberTable = [...groups.values()].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || b.len - a.len);
 
-  const bases = posts.length;
-  const anchors = bases * num('anchorsPerBase');
+  const postCount = posts.length;
+  const useBase = base === 'slab' || base === 'pincoro';
+  const bases = useBase ? postCount : 0;
+  const anchors = bases * (base === 'pincoro' ? Math.min(2, num('anchorsPerBase')) : num('anchorsPerBase')); // ピンコロは小さいので2本まで
+  const holeVol = Math.PI * (holeD / 2) ** 2 * embed;           // 穴1つのコンクリート量（m³）
+  const concreteBags = base === 'buried' ? Math.ceil((postCount * holeVol) / 0.011) : 0; // 25kg袋 ≒ 0.011m³
   const rafterCount = members.filter((m) => m.kind === 'rafter').length;
   const caps = posts.length + 2 * (2 + purlinCount + (mono ? 0 : 1)) + (mono ? 2 * rafterCount : rafterCount);
 
@@ -229,20 +238,31 @@ export function compute(input) {
   // 購入リストと費用
   const items = [];
   [...purchase.entries()].sort((a, b) => a[0] - b[0]).forEach(([s, n]) => {
-    items.push({ group: '単管', name: `単管パイプ φ48.6`, spec: `${s}m`, qty: n, unit: num(pipeKey(s)) });
+    items.push({ group: '単管', name: `単管パイプ φ48.6`, term: '単管パイプ', spec: `${s}m`, qty: n, unit: num(pipeKey(s)) });
   });
-  items.push({ group: '金具', name: '直交クランプ', spec: '48.6×48.6', qty: cl.fixed, unit: num('cFixed') });
-  items.push({ group: '金具', name: '自在クランプ', spec: '48.6×48.6', qty: cl.swivel, unit: num('cSwivel') });
-  if (joints) items.push({ group: '金具', name: '単管ジョイント', spec: '48.6', qty: joints, unit: num('cJoint') });
-  items.push({ group: '金具', name: '固定ベース', spec: '48.6', qty: bases, unit: num('cBase') });
-  items.push({ group: '金具', name: 'あと施工アンカー', spec: 'M10程度', qty: anchors, unit: num('cAnchor') });
-  items.push({ group: '金具', name: '単管キャップ', spec: '48.6', qty: caps, unit: num('cCap') });
+  items.push({ group: '金具', name: '直交クランプ', term: '直交クランプ', spec: '48.6×48.6', qty: cl.fixed, unit: num('cFixed') });
+  items.push({ group: '金具', name: '自在クランプ', term: '自在クランプ', spec: '48.6×48.6', qty: cl.swivel, unit: num('cSwivel') });
+  if (joints) items.push({ group: '金具', name: '単管ジョイント', term: '単管ジョイント', spec: '48.6', qty: joints, unit: num('cJoint') });
+  if (useBase) {
+    items.push({ group: '金具', name: '固定ベース', term: '固定ベース', spec: '48.6', qty: bases, unit: num('cBase') });
+    items.push({ group: '金具', name: 'あと施工アンカー', term: 'あと施工アンカー', spec: base === 'pincoro' ? 'M8〜M10' : 'M10程度', qty: anchors, unit: num('cAnchor') });
+  }
+  items.push({ group: '金具', name: '単管キャップ', term: '単管キャップ', spec: '48.6', qty: caps, unit: num('cCap') });
+  if (base === 'pincoro') {
+    items.push({ group: '基礎', name: 'ピンコロ（束石）', term: 'ピンコロ', spec: '20cm角', qty: postCount, unit: num('cPincoro') });
+    items.push({ group: '基礎', name: '砕石', term: '砕石', spec: '20kg袋', qty: Math.ceil(postCount / 2), unit: num('cGravel') });
+  } else if (base === 'buried') {
+    items.push({ group: '基礎', name: 'ドライコンクリート', term: 'ドライコンクリート', spec: '25kg袋', qty: concreteBags, unit: num('cConcrete') });
+    items.push({ group: '基礎', name: '砕石', term: '砕石', spec: '20kg袋', qty: Math.ceil(postCount / 2), unit: num('cGravel') });
+  } else if (base === 'driven') {
+    items.push({ group: '基礎', name: '単管打ち込みキャップ', term: '打ち込みキャップ', spec: '道具・1個', qty: 1, unit: num('cDriveCap') });
+  }
   if (roof) {
     [...roof.sheets.entries()].sort((a, b) => a[0] - b[0]).forEach(([shaku, n]) => {
-      items.push({ group: '屋根', name: '波板（ポリカ等）', spec: `${shaku}尺`, qty: n, unit: num(sheetKey(shaku)) });
+      items.push({ group: '屋根', name: '波板（ポリカ等）', term: '波板', spec: `${shaku}尺`, qty: n, unit: num(sheetKey(shaku)) });
     });
-    items.push({ group: '屋根', name: '単管用波板フック', spec: '', qty: roof.hooks, unit: num('cHook') });
-    if (roof.ridgeCap) items.push({ group: '屋根', name: '棟包み', spec: 'm', qty: Math.ceil(roof.ridgeCap * 10) / 10, unit: num('cRidge') });
+    items.push({ group: '屋根', name: '単管用波板フック', term: '波板フック', spec: '', qty: roof.hooks, unit: num('cHook') });
+    if (roof.ridgeCap) items.push({ group: '屋根', name: '棟包み', term: '棟包み', spec: 'm', qty: Math.ceil(roof.ridgeCap * 10) / 10, unit: num('cRidge') });
   }
   items.forEach((it) => (it.subtotal = Math.round(it.qty * it.unit)));
   const total = items.reduce((s, it) => s + it.subtotal, 0);
@@ -254,22 +274,35 @@ export function compute(input) {
   if (slopeRatio < 0.1 - 1e-9 && (mono || Hr > H1 + 0.05)) {
     const needCm = Math.ceil((mono ? D : D / 2) * 0.1 * 100);
     const how = mono ? `前と後ろの高さの差を${needCm}cm以上にしてください` : `棟と軒の高さの差を${needCm}cm以上にしてください`;
-    warnings.push({ level: 'warn', text: `屋根の傾き（勾配）が約${(slopeRatio * 10).toFixed(1)}/10です。これは、横に10進むあいだに${(slopeRatio * 10).toFixed(1)}しか下がらない、ということです。1/10より緩いと雨水がうまく流れず、波板を重ねた部分から雨が漏れやすくなります。${how}（傾きが1/10になる差です）。` });
+    warnings.push({ level: 'warn', text: `屋根の[[勾配]]が約${(slopeRatio * 10).toFixed(1)}/10です。横に10進むあいだに${(slopeRatio * 10).toFixed(1)}しか下がらない、ということです。1/10より緩いと雨水がうまく流れず、[[波板]]を重ねた部分から雨が漏れやすくなります。${how}（傾きが1/10になる差です）。` });
   }
   const rafterSpan = W / (nr - 1);
-  if (rafterSpan > 1.8 + 1e-9) warnings.push({ level: 'warn', text: `垂木（屋根の傾きに沿って前後に渡す単管）の間隔が${rafterSpan.toFixed(2)}mあります。母屋（波板を留める横向きの単管）は垂木と垂木の間に渡されるので、この間隔が広いと、屋根の重さや雪で母屋が真ん中から下にたわみやすくなります。間隔が1.8m以下になるように「垂木の本数」を増やしてください。` });
-  if (maxBayX > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `前と後ろの列で、柱と柱の間が${maxBayX.toFixed(2)}mあります。3mを超えると、柱の上に渡す桁（横向きの単管）が真ん中で下にたわみやすくなります。「間口方向の柱の本数」を増やしてください。` });
-  if (maxBayZ > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `左右の列で、柱と柱の間が${maxBayZ.toFixed(2)}mあります。3mを超えると、垂木（屋根の傾きに沿って前後に渡す単管）が真ん中で下にたわみやすくなります。「奥行き方向の柱の本数」を増やしてください。` });
-  if (ps > 0.9) warnings.push({ level: 'warn', text: '母屋（波板を留める横向きの単管）の間隔が90cmを超えています。波板を支える場所が少ないと、強い風で波板がバタついて割れたり、留め具が外れて飛ばされたりしやすくなります。「母屋の間隔」を60〜90cmにしてください。' });
-  if (braceFaces < 3) warnings.push({ level: 'warn', text: `筋交い（斜めに入れる単管）が入っている面が${braceFaces}面しかありません。単管を四角に組んだだけだと、横から押されたときに平行四辺形のようにグラグラ傾いてしまいます。この揺れを止められるのは、斜めの筋交いが入っている面だけです。出入りする前面を除いた3面には入れるのがおすすめです。` });
-  if (W * D > 10 + 1e-9) warnings.push({ level: 'info', text: `床面積が約${(W * D).toFixed(1)}㎡あります。屋根と柱があるものは、小さくても法律上「建物」として扱われます。10㎡を超えると、原則として役所への建築確認申請が必要になります。作る前に、市区町村の建築指導課などに相談してください。` });
-  else warnings.push({ level: 'info', text: `床面積は約${(W * D).toFixed(1)}㎡です。屋根と柱があるものは、小さくても法律上「建物」として扱われます。ただ、10㎡以下で、防火地域・準防火地域でなければ、建築確認申請はいらないことが多いです。念のため、市区町村の建築指導課などで確認してください。` });
+  if (rafterSpan > 1.8 + 1e-9) warnings.push({ level: 'warn', text: `[[垂木]]の間隔が${rafterSpan.toFixed(2)}mあります。[[母屋]]は垂木と垂木の間に渡されるので、この間隔が広いと、屋根の重さや雪で母屋が真ん中から下にたわみやすくなります。間隔が1.8m以下になるように「垂木の本数」を増やしてください。` });
+  if (maxBayX > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `前と後ろの列で、柱と柱の間が${maxBayX.toFixed(2)}mあります。3mを超えると、柱の上に渡す[[桁]]が真ん中で下にたわみやすくなります。「間口方向の柱の本数」を増やしてください。` });
+  if (maxBayZ > 3.0 + 1e-9) warnings.push({ level: 'warn', text: `左右の列で、柱と柱の間が${maxBayZ.toFixed(2)}mあります。3mを超えると、[[垂木]]が真ん中でたわみやすくなります。「奥行き方向の柱の本数」を増やしてください。` });
+  if (ps > 0.9) warnings.push({ level: 'warn', text: '[[母屋]]の間隔が90cmを超えています。[[波板]]を支える場所が少ないと、強い風で波板がバタついて割れたり、留め具が外れて飛ばされたりしやすくなります。「母屋の間隔」を60〜90cmにしてください。' });
+  if (braceFaces < 3) warnings.push({ level: 'warn', text: `[[筋交い]]が入っている面が${braceFaces}面しかありません。単管を四角に組んだだけだと、横から押されたときに平行四辺形のようにグラグラ傾いてしまいます。この揺れを止められるのは、筋交いが入っている面だけです。出入りする前面を除いた3面には入れるのがおすすめです。` });
+  if (W * D > 10 + 1e-9) warnings.push({ level: 'info', text: `床面積が約${(W * D).toFixed(1)}㎡あります。屋根と柱があるものは、小さくても法律上「建物」として扱われます。10㎡を超えると、原則として[[建築確認]]の申請が必要になります。作る前に、市区町村の建築指導課などに相談してください。` });
+  else warnings.push({ level: 'info', text: `床面積は約${(W * D).toFixed(1)}㎡です。屋根と柱があるものは、小さくても法律上「建物」として扱われます。ただ、10㎡以下で、防火地域・準防火地域でなければ、[[建築確認]]の申請はいらないことが多いです。念のため、市区町村の建築指導課などで確認してください。` });
   warnings.push({ level: 'info', text: 'このツールは、部材の本数と費用の目安を出すためのものです。「この組み方で雪や風に耐えられるか」という強度の計算はしていません。雪がよく積もる地域や、台風・強風が多い場所では、柱・垂木・筋交いを多めにしてください。不安なときは、工務店などに相談すると安心です。' });
-  if (Math.max(H1, H2, mono ? 0 : Hr) > 3.5) warnings.push({ level: 'warn', text: '高さが3.5mを超えています。背が高いほど風を受けたときに大きく揺れ、柱の根元のアンカーにも大きな力がかかります。筋交いを4面すべてに入れ、胴つなぎも入れてください。' });
+  if (Math.max(H1, H2, mono ? 0 : Hr) > 3.5) warnings.push({ level: 'warn', text: '高さが3.5mを超えています。背が高いほど風を受けたときに大きく揺れ、柱の足元にも大きな力がかかります。[[筋交い]]を4面すべてに入れ、[[胴つなぎ]]も入れてください。' });
+
+  // 基礎についての注意
+  const hasLowTie = ['F', 'B', 'L', 'R'].filter((k) => { const t = num('t' + k); return t > 0 && t <= 0.5; }).length >= 3;
+  if (base === 'pincoro') {
+    warnings.push({ level: 'warn', text: `[[ピンコロ]]は地面に置いてあるだけなので、強い風が屋根の下に吹き込むと、屋根ごと持ち上げられたり、ずれたりすることがあります。ピンコロを半分以上地面に埋める、大きめの[[束石]]にする、などで対策してください。${hasLowTie ? '' : '柱の足元どうしを[[根がらみ]]でつなぐのも効果があります（4面の「胴つなぎの高さ」を0.2くらいにすると根がらみになります）。'}台風が多い地域では、「穴を掘ってコンクリートで固める」方法の方が安心です。` });
+  } else if (base === 'buried') {
+    const perHole = Math.max(1, Math.round(holeVol / 0.011 * 10) / 10);
+    warnings.push({ level: 'info', text: `柱の下を${Math.round(embed * 100)}cm地面に埋めて、まわりを[[ドライコンクリート]]で固めます。穴1つにつき約${perHole}袋（25kg）使う計算です。穴の底には[[砕石]]を敷いて突き固めてください。地面との境目は錆びやすいので、そこに錆止め塗料を塗っておくと長持ちします。` });
+    if (embed < 0.5) warnings.push({ level: 'warn', text: `[[根入れ]]が${Math.round(embed * 100)}cmしかありません。浅いと風で柱が抜けたり傾いたりしやすいので、50cm以上（できれば60cm以上）にしてください。` });
+  } else if (base === 'driven') {
+    warnings.push({ level: 'warn', text: `単管を地面に直接打ち込む方法は手軽ですが、雨で地面がゆるむと柱が沈んだり傾いたりしやすく、屋根付きのものにはあまり向きません。[[根入れ]]は60cm以上にして、${hasLowTie ? '' : '[[根がらみ]]で柱の足元どうしをつなぎ、'}できれば「穴を掘ってコンクリートで固める」方法も検討してください。` });
+    if (embed < 0.6) warnings.push({ level: 'warn', text: `[[根入れ]]が${Math.round(embed * 100)}cmしかありません。打ち込みの場合は60cm以上が目安です。` });
+  }
 
   return {
-    params: p, members, memberTable, items, total, clamps: cl, joints, bases, anchors, caps,
+    params: p, members, memberTable, items, total, clamps: cl, joints, bases, anchors, caps, postCount, concreteBags,
     pipeCount, pipeLength, weight: pipeLength * 2.08, roof, slopes, warnings, slopeRatio,
-    dims: { W, D, H1, H2, Hr, mono, oe, os },
+    dims: { W, D, H1, H2, Hr, mono, oe, os, base, embed, holeD },
   };
 }

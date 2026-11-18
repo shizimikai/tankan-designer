@@ -20,12 +20,13 @@ const mm = (m) => Math.round(m * 1000).toLocaleString('ja-JP');
 const f1 = (v) => Math.round(v * 10) / 10;
 
 export function drawSheet(r, meta = {}) {
-  const { W, D, H1, H2, Hr, mono, oe, os } = r.dims;
+  const { W, D, H1, H2, Hr, mono, oe, os, base = 'slab', embed = 0, holeD = 0.25 } = r.dims;
+  const below = base === 'slab' ? 0.1 : base === 'pincoro' ? 0.2 : embed + 0.08; // 地面より下に描く深さ
   const maxH = Math.max(H1, H2, mono ? 0 : Hr);
   const Wt = W + 2 * os, Dt = D + 2 * oe, Ht = maxH + 0.3;
   const M = 78, GAP = 120, TITLE = 64;
-  const s = Math.min((SHEET_W - 2 * M - GAP) / (Wt + Dt), (SHEET_H - TITLE - 2 * M - GAP) / (Dt + Ht + 0.1));
-  const usedW = (Wt + Dt) * s + GAP, usedH = (Dt + Ht + 0.1) * s + GAP;
+  const s = Math.min((SHEET_W - 2 * M - GAP) / (Wt + Dt), (SHEET_H - TITLE - 2 * M - GAP) / (Dt + Ht + below));
+  const usedW = (Wt + Dt) * s + GAP, usedH = (Dt + Ht + below) * s + GAP;
   const x0 = (SHEET_W - usedW) / 2, y0 = (SHEET_H - TITLE - usedH) / 2;
 
   // 各図の原点（svg座標）
@@ -66,6 +67,10 @@ export function drawSheet(r, meta = {}) {
       const off = YOFF[m.kind] || 0;
       const a = P([m.a[0], m.a[1] + off, m.a[2]]), b = P([m.b[0], m.b[1] + off, m.b[2]]);
       const c = COLORS[m.kind] || '#444';
+      if (m.kind === 'post' && m.a[1] < 0 && P !== PT) {
+        const g = P([m.a[0], 0, m.a[2]]);
+        line(a, g, c, sw, ' stroke-dasharray="4 3" opacity="0.7"'); line(g, b, c); continue;
+      }
       if (Math.hypot(a[0] - b[0], a[1] - b[1]) < 1) out.push(`<circle cx="${f1(a[0])}" cy="${f1(a[1])}" r="${f1(Math.max(1.6, sw / 2 + 0.6))}" fill="#fff" stroke="${c}" stroke-width="1.1"/>`);
       else line(a, b, c);
     }
@@ -76,10 +81,22 @@ export function drawSheet(r, meta = {}) {
       out.push(`<polygon points="${pts.map((q) => q.map(f1).join(',')).join(' ')}" fill="#9fd0f0" fill-opacity="0.18" stroke="#5c8fb3" stroke-width="0.9"${dashed ? ' stroke-dasharray="5 3"' : ''}/>`);
     }
   };
-  const slab = (P, u1, u2) => {
-    // 正面・側面用のコンクリート（厚さ10cm）と地面線
+  // 正面・側面の基礎と地面。u1/u2 は地面の左右端（モデル座標）、posts は柱の位置
+  const foundation = (P, u1, u2) => {
     const a = P(u1), b = P(u2);
-    out.push(`<rect x="${f1(Math.min(a[0], b[0]))}" y="${f1(groundY)}" width="${f1(Math.abs(b[0] - a[0]))}" height="${f1(0.1 * s)}" fill="#e2ded7" stroke="#9a948a" stroke-width="0.8"/>`);
+    const xL = Math.min(a[0], b[0]), xR = Math.max(a[0], b[0]);
+    if (base === 'slab') {
+      out.push(`<rect x="${f1(xL)}" y="${f1(groundY)}" width="${f1(xR - xL)}" height="${f1(0.1 * s)}" fill="#e2ded7" stroke="#9a948a" stroke-width="0.8"/>`);
+      return;
+    }
+    const gy = base === 'pincoro' ? groundY + 0.12 * s : groundY;
+    line([xL - 10, gy], [xR + 10, gy], '#8a7a62', 1);
+    for (let x = xL - 6; x < xR + 6; x += 9) line([x, gy], [x - 5, gy + 5], '#b3a68f', 0.6); // 地面のハッチ
+    for (const pm of posts) {
+      const c = P([pm.a[0], 0, pm.a[2]]);
+      if (base === 'pincoro') out.push(`<rect x="${f1(c[0] - 0.1 * s)}" y="${f1(groundY)}" width="${f1(0.2 * s)}" height="${f1(0.2 * s)}" fill="#e2ded7" stroke="#9a948a" stroke-width="0.8"/>`);
+      if (base === 'buried') out.push(`<rect x="${f1(c[0] - holeD / 2 * s)}" y="${f1(groundY)}" width="${f1(holeD * s)}" height="${f1(embed * s)}" fill="#e2ded7" fill-opacity="0.6" stroke="#9a948a" stroke-width="0.8" stroke-dasharray="4 2"/>`);
+    }
   };
 
   const posts = r.members.filter((m) => m.kind === 'post');
@@ -89,27 +106,28 @@ export function drawSheet(r, meta = {}) {
   const rafterXs = uniq(r.members.filter((m) => m.kind === 'rafter').map((m) => m.a[0]));
 
   // ---------- 正面図 ----------
-  slab(PF, [W + 0.2, 0, 0], [-0.2, 0, 0]);
+  foundation(PF, [W + 0.2, 0, 0], [-0.2, 0, 0]);
   if (r.roof) roofPoly(PF, false);
   drawMembers(PF, (m) => -m.a[2] - m.b[2]); // 奥のものから
   {
-    const yb = groundY + 0.1 * s;
+    const yb = groundY + below * s;
     const xsDraw = xsPost.map((x) => PF([x, 0, 0])[0]);
     if (xsPost.length > 2) for (let i = 0; i < xsDraw.length - 1; i++) dimH(xsDraw[i], xsDraw[i + 1], yb + 22, mm(xsPost[i + 1] - xsPost[i]), yb);
     dimH(xsDraw[0], xsDraw[xsDraw.length - 1], yb + (xsPost.length > 2 ? 46 : 22), mm(W) + '（柱の間）', yb);
     const left = PF([W + os, 0, 0])[0], right = PF([-os, 0, 0])[0];
     dimV(groundY, groundY - H1 * s, left - 24, (mono ? '前 ' : '軒 ') + mm(H1), PF([W, 0, 0])[0]);
+    if (embed > 0) dimV(groundY, groundY + embed * s, left - 50, '根入れ ' + mm(embed), PF([W, 0, 0])[0]);
     if (mono && Math.abs(H2 - H1) > 0.001) dimV(groundY, groundY - H2 * s, right + 34, '後 ' + mm(H2), PF([0, 0, 0])[0]);
     if (!mono) dimV(groundY, groundY - Hr * s, right + 34, '棟 ' + mm(Hr), PF([0, 0, 0])[0]);
     text((left + right) / 2, yb + (xsPost.length > 2 ? 78 : 54), '正面図（前から見た図）', { size: 13, weight: 700 });
   }
 
   // ---------- 右側面図 ----------
-  slab(PS, [-0.2, 0, -0.2], [0, 0, D + 0.2]);
+  foundation(PS, [-0.2, 0, -0.2], [0, 0, D + 0.2]);
   if (r.roof) roofPoly(PS, false);
   drawMembers(PS, (m) => -(m.a[0] + m.b[0])); // x の大きい（奥＝左面）ものから
   {
-    const yb = groundY + 0.1 * s;
+    const yb = groundY + below * s;
     const zsDraw = zsPost.map((z) => PS([0, 0, z])[0]);
     if (zsPost.length > 2) for (let i = 0; i < zsDraw.length - 1; i++) dimH(zsDraw[i], zsDraw[i + 1], yb + 22, mm(zsPost[i + 1] - zsPost[i]), yb);
     dimH(zsDraw[0], zsDraw[zsDraw.length - 1], yb + (zsPost.length > 2 ? 46 : 22), mm(D) + '（柱の間）', yb);
@@ -124,15 +142,20 @@ export function drawSheet(r, meta = {}) {
     dimV(groundY, groundY - H1 * s, left - 24, (mono ? '前 ' : '軒 ') + mm(H1), PS([0, 0, 0])[0]);
     if (mono) dimV(groundY, groundY - H2 * s, right + 34, '後 ' + mm(H2), PS([0, 0, D])[0]);
     else dimV(groundY, groundY - Hr * s, right + 34, '棟 ' + mm(Hr), PS([0, 0, D / 2])[0]);
-    text(left + 10, groundY + 0.1 * s + 14, '← 前', { size: 10, anchor: 'start', fill: '#777' });
-    text(right - 10, groundY + 0.1 * s + 14, '後 →', { size: 10, anchor: 'end', fill: '#777' });
+    text(left + 10, groundY + below * s + 14, '← 前', { size: 10, anchor: 'start', fill: '#777' });
+    text(right - 10, groundY + below * s + 14, '後 →', { size: 10, anchor: 'end', fill: '#777' });
     text((left + right) / 2, yb + (zsPost.length > 2 ? 78 : 54), '右側面図（右から見た図）', { size: 13, weight: 700 });
   }
 
   // ---------- 平面図 ----------
   {
     const a = PT([W + 0.2, 0, D + 0.2]), b = PT([-0.2, 0, -0.2]);
-    out.push(`<rect x="${f1(a[0])}" y="${f1(a[1])}" width="${f1(b[0] - a[0])}" height="${f1(b[1] - a[1])}" fill="#efece6" stroke="#b8b1a6" stroke-width="0.8"/>`);
+    if (base === 'slab') out.push(`<rect x="${f1(a[0])}" y="${f1(a[1])}" width="${f1(b[0] - a[0])}" height="${f1(b[1] - a[1])}" fill="#efece6" stroke="#b8b1a6" stroke-width="0.8"/>`);
+    for (const pm of posts) {
+      const c = PT(pm.a);
+      if (base === 'pincoro') out.push(`<rect x="${f1(c[0] - 0.1 * s)}" y="${f1(c[1] - 0.1 * s)}" width="${f1(0.2 * s)}" height="${f1(0.2 * s)}" fill="#e2ded7" stroke="#9a948a" stroke-width="0.8"/>`);
+      if (base === 'buried') out.push(`<circle cx="${f1(c[0])}" cy="${f1(c[1])}" r="${f1(holeD / 2 * s)}" fill="#e2ded7" fill-opacity="0.6" stroke="#9a948a" stroke-width="0.8" stroke-dasharray="4 2"/>`);
+    }
   }
   drawMembers(PT, (m) => (m.a[1] + m.b[1])); // 低いものから
   if (r.roof) roofPoly(PT, true);
@@ -183,7 +206,8 @@ export function drawSheet(r, meta = {}) {
   out.push(`<line x1="20" y1="${ty}" x2="${SHEET_W - 20}" y2="${ty}" stroke="#1f2328" stroke-width="1"/>`);
   text(28, ty + 26, meta.name || '単管パイプ屋根', { size: 16, anchor: 'start', weight: 700 });
   const typeName = mono ? '片流れ' : '切妻';
-  text(28, ty + 46, `${typeName}　間口 ${mm(W)} × 奥行 ${mm(D)} × 高さ ${mm(maxH)}　／　単位：mm`, { size: 11, anchor: 'start', fill: '#444' });
+  const baseName = { slab: '土間コンクリートに固定', pincoro: 'ピンコロ（束石）', buried: '穴を掘ってコンクリートで固定', driven: '地面に打ち込み' }[base] || '';
+  text(28, ty + 46, `${typeName}　間口 ${mm(W)} × 奥行 ${mm(D)} × 高さ ${mm(maxH)}　基礎：${baseName}　／　単位：mm`, { size: 11, anchor: 'start', fill: '#444' });
   const scale = Math.round(1000 / (s * (420 / SHEET_W)) / 5) * 5;
   text(SHEET_W - 28, ty + 26, `${meta.date || ''}`, { size: 11, anchor: 'end', fill: '#444' });
   text(SHEET_W - 28, ty + 46, `A3横で印刷すると約1/${scale}　（単管パイプ設計ツールで作成）`, { size: 10, anchor: 'end', fill: '#777' });
