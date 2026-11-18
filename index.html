@@ -162,6 +162,7 @@ const isMono = (p) => p.roofType === 'mono';
 const on = (k) => (p) => p[k] === true || p[k] === 'true';
 const FACE_FIELDS = [['F', '前面'], ['B', '後面'], ['R', '左面'], ['L', '右面']].flatMap(([k, g]) => [
   { g, id: 'b' + k, label: '筋交いを入れる', type: 'check', term: '筋交い', hint: k === 'F' ? '出入りする面は、筋交いを入れないか、上の方だけに入れることが多いです。' : '' },
+  { g, id: `b${k}s`, label: '筋交いの入れ方', type: 'select', options: [['single', '片筋交い'], ['x', 'たすき']], show: on('b' + k), term: (p) => (p[`b${k}s`] === 'x' ? 'たすき' : '片筋交い') },
   { g, id: `b${k}lo`, label: '筋交いの下端', unit: 'm', step: 0.1, min: 0.05, max: 5, show: on('b' + k), term: '筋交い', hint: '筋交いが始まる高さです。柱の途中から出すときは、この数字を大きくします。' },
   { g, id: `b${k}hi`, label: '筋交いの上端', unit: 'm', step: 0.1, min: 0, max: 6, show: on('b' + k), term: '筋交い', hint: '筋交いが終わる高さです。0 のときは桁のすぐ下までになります。' },
   { g, id: 't' + k, label: '胴つなぎの高さ', unit: 'm', step: 0.1, min: 0, max: 5, term: '胴つなぎ', hint: '0 のときは入れません。0.2くらいにすると根がらみになります。' },
@@ -184,7 +185,6 @@ const FIELDS = [
   { g: '屋根', id: 'os', label: 'けらばの出（左右）', unit: 'm', step: 0.05, min: 0, max: 1, term: 'けらばの出' },
   { g: '屋根', id: 'ps', label: '母屋の間隔', unit: 'm', step: 0.05, min: 0.3, max: 1.5, term: '母屋', hint: '60〜90cmが目安です。' },
   { g: '屋根', id: 'roofing', label: '波板を張る', type: 'check', term: '波板' },
-  { g: '補強', id: 'braceStyle', label: '筋交いの入れ方', type: 'select', options: [['single', '片筋交い'], ['x', 'たすき（X）']], term: (p) => (p.braceStyle === 'x' ? 'たすき' : '片筋交い') },
   { g: '補強', id: 'hiuchi', label: '火打ち（上の四隅）', type: 'check', term: '火打ち' },
   ...FACE_FIELDS,
   { g: '細かい設定', adv: true, id: 'margin', label: '単管の余長', unit: 'm', step: 0.05, min: 0, max: 0.5, term: '余長', hint: 'この分を足した長さ以上の定尺を選びます。' },
@@ -255,7 +255,9 @@ function normalizeParams(obj) {
   // 旧バージョン：胴つなぎ1つの高さ → 4面に展開
   if (Number(obj.tieH) > 0) for (const k of ['F', 'B', 'L', 'R']) if (!(Number(obj['t' + k]) > 0)) out['t' + k] = Number(obj.tieH);
   if (!['mono', 'gable'].includes(out.roofType)) out.roofType = 'mono';
-  if (!['single', 'x'].includes(out.braceStyle)) out.braceStyle = 'single';
+  // 旧バージョン：筋交いの入れ方が全体で1つ → 4面に展開
+  if (['single', 'x'].includes(obj.braceStyle)) for (const k of ['F', 'B', 'L', 'R']) if (!(('b' + k + 's') in obj)) out['b' + k + 's'] = obj.braceStyle;
+  for (const k of ['F', 'B', 'L', 'R']) if (!['single', 'x'].includes(out['b' + k + 's'])) out['b' + k + 's'] = 'single';
   if (!['slab', 'pincoro', 'buried', 'driven'].includes(out.base)) out.base = 'slab';
   return out;
 }
@@ -608,7 +610,7 @@ function renderResults(r) {
   const dirty = cur && !sameParams(cur.params, state);
   const summarize = (p, rr) => {
     const d = rr.dims; const H = Math.max(d.H1, d.H2, d.mono ? 0 : d.Hr);
-    const faces = [['bF', '前'], ['bB', '後'], ['bR', '左'], ['bL', '右']].filter(([k]) => p[k] === true || p[k] === 'true').map(([, t]) => t).join('');
+    const faces = [['bF', '前'], ['bB', '後'], ['bR', '左'], ['bL', '右']].filter(([k]) => p[k] === true || p[k] === 'true').map(([k, t]) => t + (p[k + 's'] === 'x' ? '(X)' : '')).join(' ');
     return {
       shape: d.mono ? '片流れ' : '切妻', size: `${d.W}×${d.D}×${H}m`, cols: `柱${rr.postCount}／垂木${rr.memberTable.filter((g) => g.kind === 'rafter').reduce((a, g) => a + g.count, 0)}`,
       base: ({ slab: '土間', pincoro: 'ピンコロ', buried: '埋め込み', driven: '打ち込み' })[d.base] || '土間', braces: faces || 'なし', pipes: `${rr.pipeCount}本`, clamps: `${rr.clamps.fixed + rr.clamps.swivel}個`, weight: `${Math.round(rr.weight)}kg`, total: rr.total,

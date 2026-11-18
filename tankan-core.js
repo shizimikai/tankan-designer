@@ -13,7 +13,8 @@ export const DEFAULTS = {
   W: 3.0, D: 3.0, roofType: 'mono', H1: 3.0, H2: 2.6, Hr: 3.5,
   nx: 2, ny: 2, nr: 3,
   oe: 0.2, os: 0.15, ps: 0.7, roofing: true,
-  bF: false, bB: true, bL: true, bR: true, braceStyle: 'single', hiuchi: true,
+  bF: false, bB: true, bL: true, bR: true, hiuchi: true,
+  bFs: 'single', bBs: 'single', bLs: 'single', bRs: 'single', // 筋交いの入れ方（面ごと）：single=片筋交い / x=たすき
   bFlo: 0.15, bBlo: 0.15, bLlo: 0.15, bRlo: 0.15, // 筋交いの下端の高さ
   bFhi: 0, bBhi: 0, bLhi: 0, bRhi: 0,             // 筋交いの上端の高さ（0 = 桁まで）
   tF: 0, tB: 0, tL: 0, tR: 0,                     // 胴つなぎの高さ（0 = なし）
@@ -52,6 +53,8 @@ export function sheetPlan(slen) {
 export function compute(input) {
   const p = { ...DEFAULTS, ...input };
   // 旧バージョンの共有URL（胴つなぎの高さが1つだけ）に対応
+  // 旧バージョン（筋交いの入れ方が全体で1つ）に対応
+  if (input?.braceStyle) for (const k of ['F', 'B', 'L', 'R']) if (input['b' + k + 's'] == null) p['b' + k + 's'] = input.braceStyle;
   if (Number(input?.tieH) > 0) for (const k of ['F', 'B', 'L', 'R']) if (input['t' + k] == null) p['t' + k] = Number(input.tieH);
   const num = (k) => Number(p[k]);
   const W = num('W'), D = num('D');
@@ -158,11 +161,11 @@ export function compute(input) {
 
   // 筋交い（面ごとに下端・上端の高さを変えられる。上端 0 は桁まで）
   const bTop = 0.12, MIN_RISE = 0.4;
-  const X = p.braceStyle === 'x';
   const brace = (a, b) => { add('brace', '筋交い', a, b); cl.swivel += 2; };
   let braceFaces = 0;
   for (const [k, f] of Object.entries(FACES)) {
     if (!truthy(p['b' + k])) continue;
+    const X = p['b' + k + 's'] === 'x';
     const lo = Math.max(0.05, num('b' + k + 'lo'));
     const hiIn = num('b' + k + 'hi');
     const hiAt = (t) => (hiIn > 0 ? Math.min(hiIn, f.top(t) - bTop) : f.top(t) - bTop);
